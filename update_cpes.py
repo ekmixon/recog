@@ -25,9 +25,7 @@ def parse_cpe_vp_map(file):
         if entry.get("deprecated"):
             continue
 
-        cpe_match = re.match('^cpe:/([aho]):([^:]+):([^:]+)', cpe_name)
-
-        if cpe_match:
+        if cpe_match := re.match('^cpe:/([aho]):([^:]+):([^:]+)', cpe_name):
             cpe_type, vendor, product = cpe_match.group(1, 2, 3)
             if cpe_type not in vp_map:
                 vp_map[cpe_type] = {}
@@ -97,8 +95,7 @@ def lookup_cpe(vendor, product, cpe_type, cpe_table, remap):
     # get the remappings for this one vendor string.
     vendor_remap = None
 
-    remap_type = remap.get(cpe_type, None)
-    if remap_type:
+    if remap_type := remap.get(cpe_type, None):
         vendor_remap = remap_type.get(vendor, None)
 
     if vendor_remap:
@@ -151,18 +148,22 @@ def update_cpes(xml_file, cpe_vp_map, r7_vp_map):
                 param.getparent().remove(param)
                 continue
 
-            match = re.search(r'^(?P<fp_type>hw|os|service(?:\.component)?)\.', name)
-            if match:
-                fp_type = match.group('fp_type')
-                if not fp_type in params:
+            if match := re.search(
+                r'^(?P<fp_type>hw|os|service(?:\.component)?)\.', name
+            ):
+                fp_type = match['fp_type']
+                if fp_type not in params:
                     params[fp_type] = {}
                 if name in params[fp_type]:
-                    raise ValueError('Duplicated fingerprint named {} in fingerprint {} in file {}'.format(name, fingerprint.attrib['pattern'], xml_file))
+                    raise ValueError(
+                        f"Duplicated fingerprint named {name} in fingerprint {fingerprint.attrib['pattern']} in file {xml_file}"
+                    )
+
                 params[fp_type][name] = param
 
 
         # for each of the applicable os/service param groups, build a CPE
-        for fp_type in params:
+        for fp_type, value in params.items():
             if fp_type == 'os':
                 cpe_type = 'o'
             elif fp_type.startswith('service'):
@@ -170,7 +171,7 @@ def update_cpes(xml_file, cpe_vp_map, r7_vp_map):
             elif fp_type == 'hw':
                 cpe_type = 'h'
             else:
-                raise ValueError('Unhandled param type {}'.format(fp_type))
+                raise ValueError(f'Unhandled param type {fp_type}')
 
             # extract the vendor/product/version values from each os/service group,
             # using the static value ('Apache', for example) when pos is 0, and
@@ -183,13 +184,14 @@ def update_cpes(xml_file, cpe_vp_map, r7_vp_map):
                 'version': '-',
             }
             for fp_datum in fp_data:
-                fp_datum_param_name = "{}.{}".format(fp_type, fp_datum)
-                if fp_datum_param_name in params[fp_type]:
+                fp_datum_param_name = f"{fp_type}.{fp_datum}"
+                if fp_datum_param_name in value:
                     fp_datum_e = params[fp_type][fp_datum_param_name]
-                    if fp_datum_e.attrib['pos'] == '0':
-                        fp_data[fp_datum] = fp_datum_e.attrib['value']
-                    else:
-                        fp_data[fp_datum] = "{{{}}}".format(fp_datum_e.attrib['name'])
+                    fp_data[fp_datum] = (
+                        fp_datum_e.attrib['value']
+                        if fp_datum_e.attrib['pos'] == '0'
+                        else "{{{}}}".format(fp_datum_e.attrib['name'])
+                    )
 
             vendor = fp_data['vendor']
             product = fp_data['product']
@@ -198,7 +200,7 @@ def update_cpes(xml_file, cpe_vp_map, r7_vp_map):
             # build a reasonable looking CPE value from the vendor/product/version,
             # lowercasing, replacing whitespace with _, and more
             if vendor and product:
-                if not cpe_type in cpe_vp_map:
+                if cpe_type not in cpe_vp_map:
                     logging.error("Didn't find CPE type '%s' for '%s' '%s'", cpe_type, vendor, product)
                     continue
 
@@ -224,14 +226,14 @@ def update_cpes(xml_file, cpe_vp_map, r7_vp_map):
                 # building the CPE string
                 # Last minute escaping of '/' and `!`
                 product = product.replace('/', '\/').replace('%21', '\!')
-                cpe_value = 'cpe:/{}:{}:{}'.format(cpe_type, vendor, product)
+                cpe_value = f'cpe:/{cpe_type}:{vendor}:{product}'
 
                 if version:
-                    cpe_value += ":{}".format(version)
+                    cpe_value += f":{version}"
 
                 cpe_param = etree.Element('param')
                 cpe_param.attrib['pos'] = '0'
-                cpe_param.attrib['name'] = '{}.cpe23'.format(fp_type)
+                cpe_param.attrib['name'] = f'{fp_type}.cpe23'
                 cpe_param.attrib['value'] = cpe_value
 
                 for param_name in params[fp_type]:
